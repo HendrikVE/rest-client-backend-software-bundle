@@ -1,0 +1,3 @@
+[submodule "confluent-platform-security-tools"]
+	path = confluent-platform-security-tools
+	url = https://github.com/confluentinc/confluent-platform-security-tools
