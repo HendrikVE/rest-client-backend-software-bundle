@@ -1,0 +1,49 @@
+From 0316b86b7daadeff8e3fe12b9698627c8ec8a15e Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 22:42:58 +0200
+Subject: [PATCH 3/9] add kafka media types
+
+---
+ .../org/eclipse/californium/core/coap/MediaTypeRegistry.java | 5 +++++
+ .../eclipse/californium/core/coap/MediaTypeRegistryTest.java | 2 +-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/MediaTypeRegistry.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/MediaTypeRegistry.java
+index fe5e52a69..540aabb69 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/MediaTypeRegistry.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/MediaTypeRegistry.java
+@@ -90,6 +90,8 @@ public class MediaTypeRegistry {
+ 	public static final int APPLICATION_VND_OMA_LWM2M_TLV = 11542;
+ 	public static final int APPLICATION_VND_OMA_LWM2M_JSON = 11543;
+ 	public static final int APPLICATION_VND_OMA_LWM2M_CBOR = 11544;
++	public static final int APPLICATION_VND_KAFKA_JSON_V2_JSON = 17500;
++	public static final int APPLICATION_VND_KAFKA_V2_JSON = 17501;
+ 	public static final int TEXT_CSS = 20000;
+ 	public static final int IMAGE_SVG_XML = 30000;
+ 	public static final int MAX_TYPE = 0xffff;
+@@ -167,6 +169,9 @@ public class MediaTypeRegistry {
+ 		addNonPrintable(APPLICATION_OSCORE, "application/oscore", "oscore");
+ 		addPrintable(APPLICATION_JAVASCRIPT, "application/javascript", "js", false);
+ 
++		addPrintable(APPLICATION_VND_KAFKA_JSON_V2_JSON, "application/vnd.kafka.json.v2+json", "json", false);
++		addPrintable(APPLICATION_VND_KAFKA_V2_JSON, "application/vnd.kafka.v2+json", "json", false);
++
+ 		addNonPrintable(APPLICATION_VND_OMA_LWM2M_TLV, "application/vnd.oma.lwm2m+tlv", "tlv");
+ 		addPrintable(APPLICATION_VND_OMA_LWM2M_JSON, "application/vnd.oma.lwm2m+json", "json", false);
+ 		addNonPrintable(APPLICATION_VND_OMA_LWM2M_CBOR, "application/vnd.oma.lwm2m+cbor", "cbor");
+diff --git a/californium-core/src/test/java/org/eclipse/californium/core/coap/MediaTypeRegistryTest.java b/californium-core/src/test/java/org/eclipse/californium/core/coap/MediaTypeRegistryTest.java
+index f21e53deb..4ee6f6964 100644
+--- a/californium-core/src/test/java/org/eclipse/californium/core/coap/MediaTypeRegistryTest.java
++++ b/californium-core/src/test/java/org/eclipse/californium/core/coap/MediaTypeRegistryTest.java
+@@ -50,7 +50,7 @@ public class MediaTypeRegistryTest {
+ 		mediaTypes = MediaTypeRegistry.parseWildcard("text/*");
+ 		assertThat(mediaTypes.length, is(2));
+ 		mediaTypes = MediaTypeRegistry.parseWildcard("application/*");
+-		assertThat(mediaTypes.length, is(47));
++		assertThat(mediaTypes.length, is(48));
+ 		mediaTypes = MediaTypeRegistry.parseWildcard("image/*");
+ 		assertThat(mediaTypes.length, is(4));
+ 		mediaTypes = MediaTypeRegistry.parseWildcard("plain/*");
+-- 
+2.25.1
+

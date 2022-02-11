@@ -1,0 +1,137 @@
+From 42c75beb27dc2a3feb13131c7c89a5cfdd4568f5 Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 23:03:59 +0200
+Subject: [PATCH 9/9] add configuration for mTLS connection
+
+---
+ .../proxy2/http/HttpClientFactory.java        | 81 ++++++++++++++++++-
+ 1 file changed, 80 insertions(+), 1 deletion(-)
+
+diff --git a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/HttpClientFactory.java b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/HttpClientFactory.java
+index 6fafa0f23..9b89d9e46 100644
+--- a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/HttpClientFactory.java
++++ b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/HttpClientFactory.java
+@@ -15,8 +15,13 @@
+  ******************************************************************************/
+ package org.eclipse.californium.proxy2.http;
+ 
++import java.io.FileInputStream;
++import java.io.IOException;
++import java.security.GeneralSecurityException;
++import java.security.KeyStore;
+ import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.atomic.AtomicReference;
++import javax.net.ssl.*;
+ 
+ import org.apache.hc.client5.http.config.RequestConfig;
+ import org.apache.hc.client5.http.impl.DefaultConnectionKeepAliveStrategy;
+@@ -24,6 +29,8 @@ import org.apache.hc.client5.http.impl.async.CloseableHttpAsyncClient;
+ import org.apache.hc.client5.http.impl.async.HttpAsyncClientBuilder;
+ import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManager;
+ import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder;
++import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
++import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+ import org.apache.hc.core5.http.HttpResponse;
+ import org.apache.hc.core5.http.protocol.HttpContext;
+ import org.apache.hc.core5.http.protocol.RequestConnControl;
+@@ -31,6 +38,7 @@ import org.apache.hc.core5.http.protocol.RequestDate;
+ import org.apache.hc.core5.http.protocol.RequestExpectContinue;
+ import org.apache.hc.core5.http.protocol.RequestTargetHost;
+ import org.apache.hc.core5.http.protocol.RequestUserAgent;
++import org.apache.hc.core5.http.ssl.TLS;
+ import org.apache.hc.core5.http2.HttpVersionPolicy;
+ import org.apache.hc.core5.pool.PoolConcurrencyPolicy;
+ import org.apache.hc.core5.pool.PoolReusePolicy;
+@@ -97,7 +105,9 @@ public class HttpClientFactory {
+ 		int connectionIdleSecs = config.getTimeAsInt(Proxy2Config.HTTP_CONNECTION_IDLE_TIMEOUT, TimeUnit.SECONDS);
+ 		final CloseableHttpAsyncClient client = HttpAsyncClientBuilder.create().disableCookieManagement()
+ 				.setDefaultRequestConfig(createCustomRequestConfig(config))
+-				.setConnectionManager(createPoolingConnManager(config)).setVersionPolicy(HttpVersionPolicy.NEGOTIATE)
++				// TODO: fix forcing HTTP/1 because of "[ProxyHttpClientResource]: Failed to get the http response: Header 'Connection: keep-alive' is illegal for HTTP/2 messages"
++				//.setConnectionManager(createPoolingConnManager(config)).setVersionPolicy(HttpVersionPolicy.NEGOTIATE)
++				.setConnectionManager(createPoolingConnManager(config)).setVersionPolicy(HttpVersionPolicy.FORCE_HTTP_1)
+ 				.setIOReactorConfig(
+ 						IOReactorConfig.custom().setSoTimeout(Timeout.ofSeconds(connectionIdleSecs)).build())
+ 				.addRequestInterceptorFirst(new RequestConnControl()).addRequestInterceptorFirst(new RequestDate())
+@@ -143,9 +153,78 @@ public class HttpClientFactory {
+ 	 */
+ 	private static PoolingAsyncClientConnectionManager createPoolingConnManager(Configuration config) {
+ 		long connectionIdleSecs = config.get(Proxy2Config.HTTP_CONNECTION_IDLE_TIMEOUT, TimeUnit.MILLISECONDS);
++
++		String KEY_STORE_LOCATION = "/opt/californium/californium.keystore.jks";
++		String KEY_STORE_PASSWORD = "password";
++		String TRUST_STORE_LOCATION = "/opt/californium/truststore.jks";
++		String TRUST_STORE_PASSWORD = "password";
++
++		SSLContext sslContext = null;
++		try {
++			sslContext = SSLContextFactory.createAndGetSSLContext(KEY_STORE_LOCATION, TRUST_STORE_LOCATION,
++					KEY_STORE_PASSWORD, TRUST_STORE_PASSWORD);
++		} catch (IOException | GeneralSecurityException e) {
++			e.printStackTrace();
++		}
++
+ 		return PoolingAsyncClientConnectionManagerBuilder.create()
++				// Todo: move this somewhere else
++				.setTlsStrategy(ClientTlsStrategyBuilder.create()
++						.setSslContext(sslContext)
++						.setTlsVersions(TLS.V_1_3, TLS.V_1_2)
++						// Todo: don't ignore hostnames
++						.setHostnameVerifier(NoopHostnameVerifier.INSTANCE)
++						.build())
+ 				.setPoolConcurrencyPolicy(PoolConcurrencyPolicy.STRICT).setConnPoolPolicy(PoolReusePolicy.LIFO)
+ 				.setConnectionTimeToLive(TimeValue.ofSeconds(connectionIdleSecs)).setMaxConnTotal(250)
+ 				.setMaxConnPerRoute(50).build();
+ 	}
++
++	// Todo: move this somewhere else
++	private static class SSLContextFactory {
++
++		public static SSLContext createAndGetSSLContext(String keyStore, String trustStore, String keyStorePassword,
++														String trustStorePassword) throws IOException, GeneralSecurityException {
++
++			final KeyManager[] keyManagers = getKeyManagers(keyStore, keyStorePassword);
++			final TrustManager[] trustManagers = getTrustManagers(trustStore, trustStorePassword);
++			final SSLContext sslContext = SSLContext.getInstance("SSL");
++
++			sslContext.init(keyManagers, trustManagers, null);
++
++			return sslContext;
++		}
++
++		private static KeyManager[] getKeyManagers(String keyStore, String keyStorePassword) throws IOException,
++				GeneralSecurityException {
++
++			String alg = KeyManagerFactory.getDefaultAlgorithm();
++			KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(alg);
++
++			FileInputStream fis = new FileInputStream(keyStore);
++			KeyStore ks = KeyStore.getInstance("jks");
++			ks.load(fis, keyStorePassword.toCharArray());
++			fis.close();
++
++			keyManagerFactory.init(ks, keyStorePassword.toCharArray());
++
++			return keyManagerFactory.getKeyManagers();
++		}
++
++		protected static TrustManager[] getTrustManagers(String trustStore, String trustStorePassword) throws IOException,
++				GeneralSecurityException {
++
++			String alg = TrustManagerFactory.getDefaultAlgorithm();
++			TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(alg);
++
++			FileInputStream fis = new FileInputStream(trustStore);
++			KeyStore ks = KeyStore.getInstance("jks");
++			ks.load(fis, trustStorePassword.toCharArray());
++			fis.close();
++
++			trustManagerFactory.init(ks);
++
++			return trustManagerFactory.getTrustManagers();
++		}
++	}
+ }
+-- 
+2.25.1
+

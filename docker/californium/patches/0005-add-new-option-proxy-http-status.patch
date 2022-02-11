@@ -1,0 +1,190 @@
+From b73281ab886ccdf126943dc43cc2ca3a5a9f5c63 Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 22:48:58 +0200
+Subject: [PATCH 5/9] add new option proxy-http-status
+
+---
+ .../core/coap/OptionNumberRegistry.java       |  8 ++++
+ .../californium/core/coap/OptionSet.java      | 48 +++++++++++++++++++
+ .../proxy2/http/Coap2HttpTranslator.java      |  3 ++
+ 3 files changed, 59 insertions(+)
+
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
+index d48d04ada..bca675863 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
+@@ -65,6 +65,7 @@ public final class OptionNumberRegistry {
+ 
+ 	public static final int TARGET_CONTENT_FORMAT = 55;
+ 	public static final int TARGET_ACCEPT         = 59;
++	public static final int PROXY_HTTP_STATUS     = 67;
+ 
+ 	// RFC 7967
+ 	public static final int NO_RESPONSE		= 258;
+@@ -101,6 +102,7 @@ public final class OptionNumberRegistry {
+ 
+ 		public static final String Target_Content_Format = "Target-Content-Format";
+ 		public static final String Target_Accept         = "Target-Accept";
++		public static final String Proxy_Http_Status     = "Proxy-Http-Status";
+ 
+ 		public static final String No_Response		= "No-Response";
+ 	}
+@@ -141,6 +143,7 @@ public final class OptionNumberRegistry {
+ 		case ACCEPT:
+ 		case TARGET_CONTENT_FORMAT:
+ 		case TARGET_ACCEPT:
++		case PROXY_HTTP_STATUS:
+ 		case NO_RESPONSE:
+ 			return OptionFormat.INTEGER;
+ 		case IF_NONE_MATCH:
+@@ -267,6 +270,7 @@ public final class OptionNumberRegistry {
+ 		case SIZE2:
+ 		case TARGET_CONTENT_FORMAT:
+ 		case TARGET_ACCEPT:
++		case PROXY_HTTP_STATUS:
+ 		case NO_RESPONSE:
+ 		default:
+ 			return true;
+@@ -335,6 +339,7 @@ public final class OptionNumberRegistry {
+ 		case CONTENT_FORMAT:
+ 		case TARGET_CONTENT_FORMAT:
+ 		case TARGET_ACCEPT:
++		case PROXY_HTTP_STATUS:
+ 		case ACCEPT:
+ 			max = 2;
+ 			break;
+@@ -455,6 +460,8 @@ public final class OptionNumberRegistry {
+ 			return Names.Target_Content_Format;
+ 		case TARGET_ACCEPT:
+ 			return Names.Target_Accept;
++		case PROXY_HTTP_STATUS:
++			return Names.Proxy_Http_Status;
+ 		case NO_RESPONSE:
+ 			return Names.No_Response;
+ 		default:
+@@ -485,6 +492,7 @@ public final class OptionNumberRegistry {
+ 		else if (Names.Object_Security.equals(name)) return OSCORE;
+ 		else if (Names.Target_Content_Format.equals(name)) return TARGET_CONTENT_FORMAT;
+ 		else if (Names.Target_Accept.equals(name)) return TARGET_ACCEPT;
++		else if (Names.Proxy_Http_Status.equals(name)) return PROXY_HTTP_STATUS;
+ 		else if (Names.No_Response.equals(name))	return NO_RESPONSE;
+ 		else return UNKNOWN;
+ 	}
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
+index a27f6dd9e..b51e494ce 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
+@@ -85,6 +85,7 @@ public final class OptionSet {
+ 	private byte[]       oscore;
+ 	private Integer      target_content_format;
+ 	private Integer      target_accept;
++	private Integer      proxy_http_status;
+ 	private NoResponseOption no_response;
+ 
+ 	// Arbitrary options
+@@ -119,6 +120,7 @@ public final class OptionSet {
+ 		oscore              = null;
+ 		target_content_format = null;
+ 		target_accept       = null;
++		proxy_http_status   = null;
+ 		no_response         = null;
+ 
+ 		others              = null; // new LinkedList<>();
+@@ -159,6 +161,7 @@ public final class OptionSet {
+ 		}
+ 		target_content_format = origin.target_content_format;
+ 		target_accept       = origin.target_accept;
++		proxy_http_status   = origin.proxy_http_status;
+ 		no_response         = origin.no_response;
+ 		others              = copyList(origin.others);
+ 	}
+@@ -195,6 +198,7 @@ public final class OptionSet {
+ 		oscore = null;
+ 		target_content_format = null;
+ 		target_accept = null;
++		proxy_http_status   = null;
+ 		no_response = null;
+ 		if (others != null)
+ 			others.clear();
+@@ -1568,6 +1572,45 @@ public final class OptionSet {
+ 		return this;
+ 	}
+ 
++	/**
++	 * Gets the uint value of the Proxy-Http-Status option.
++	 *
++	 * @return the Proxy-Http-Status value or null if the option is not present
++	 */
++	public Integer getProxyHttpStatus() {
++		return proxy_http_status;
++	}
++
++	/**
++	 * Checks if the Proxy-Http-Status option is present.
++	 *
++	 * @return true if present
++	 */
++	public boolean hasProxyHttpStatus() {
++		return proxy_http_status != null;
++	}
++
++	/**
++	 * Sets the Proxy-Http-Status option value.
++	 *
++	 * @param status the HTTP status code of the response
++	 * @return this OptionSet for a fluent API.
++	 */
++	public OptionSet setProxyHttpStatus(int status) {
++		this.proxy_http_status = status;
++		return this;
++	}
++
++	/**
++	 * Removes the Proxy-Http-Status option.
++	 *
++	 * @return this OptionSet for a fluent API.
++	 */
++	public OptionSet removeProxyHttpStatus() {
++		this.proxy_http_status = null;
++		return this;
++	}
++
+ 	/**
+ 	 * Gets the NoResponse option.
+ 	 * 
+@@ -1721,6 +1764,8 @@ public final class OptionSet {
+ 			options.add(new Option(OptionNumberRegistry.TARGET_CONTENT_FORMAT, getTargetContentFormat()));
+ 		if (hasTargetAccept())
+ 			options.add(new Option(OptionNumberRegistry.TARGET_ACCEPT, getTargetAccept()));
++		if (hasProxyHttpStatus())
++			options.add(new Option(OptionNumberRegistry.PROXY_HTTP_STATUS, getProxyHttpStatus()));
+ 		if (hasNoResponse())
+ 			options.add(getNoResponse().toOption());
+ 
+@@ -1839,6 +1884,9 @@ public final class OptionSet {
+ 		case OptionNumberRegistry.TARGET_ACCEPT:
+ 			setTargetAccept(option.getIntegerValue());
+ 			break;
++		case OptionNumberRegistry.PROXY_HTTP_STATUS:
++			setProxyHttpStatus(option.getIntegerValue());
++			break;
+ 		case OptionNumberRegistry.NO_RESPONSE:
+ 			setNoResponse(option.getIntegerValue());
+ 			break;
+diff --git a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java
+index 1991cdfc1..e81877ca2 100644
+--- a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java
++++ b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java
+@@ -211,6 +211,9 @@ public class Coap2HttpTranslator extends CoapUriTranslator {
+ 			}
+ 		}
+ 
++		if (coapRequest.getOptions().hasProxyHttpStatus()) {
++			coapResponse.getOptions().setProxyHttpStatus(httpCode);
++		}
+ 
+ 		// Todo: put logic in to CrossProtocolTranslator.java
+ 		byte[] payload = httpResponse.getBody().getContent();
+-- 
+2.25.1
+

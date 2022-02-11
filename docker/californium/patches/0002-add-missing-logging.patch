@@ -1,0 +1,48 @@
+From b7c08a03abfebc7dad6a00fcd1fbceada4865dd8 Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 22:57:53 +0200
+Subject: [PATCH 2/9] add missing logging
+
+---
+ .../californium/proxy2/http/CrossProtocolTranslator.java      | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/CrossProtocolTranslator.java b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/CrossProtocolTranslator.java
+index 2fa9170ca..a488dd91b 100644
+--- a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/CrossProtocolTranslator.java
++++ b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/CrossProtocolTranslator.java
+@@ -280,6 +280,7 @@ public class CrossProtocolTranslator {
+ 							try {
+ 								qualifier = Float.parseFloat(q.getValue());
+ 							} catch (NumberFormatException ex) {
++								LOGGER.error(ex.getMessage());
+ 							}
+ 						}
+ 						if (accept == null || acceptQualifier < qualifier) {
+@@ -489,6 +490,7 @@ public class CrossProtocolTranslator {
+ 				return ContentType.parseLenient(coapContentTypeString);
+ 			} catch (UnsupportedCharsetException e) {
+ 				// actually not used by parseLenient
++				LOGGER.info(e.getMessage());
+ 			}
+ 		} else {
+ 			MediaTypeDefintion definition = MediaTypeRegistry.getDefinition(coapContentType);
+@@ -499,6 +501,7 @@ public class CrossProtocolTranslator {
+ 						return ContentType.create(coapContentTypeString, "UTF-8");
+ 					} catch (UnsupportedCharsetException e) {
+ 						// UTF-8 must be supported!
++						LOGGER.error("UTF-8 must be supported! '{}'", e.getMessage());
+ 					}
+ 				} else {
+ 					return ContentType.create(coapContentTypeString);
+@@ -561,6 +564,7 @@ public class CrossProtocolTranslator {
+ 					try {
+ 						stringOptionValue = getHttpContentType(option.getIntegerValue()).toString();
+ 					} catch (TranslationException e) {
++						LOGGER.warn(e.getMessage());
+ 						continue;
+ 					}
+ 				} else if (optionFormat == OptionFormat.STRING) {
+-- 
+2.25.1
+

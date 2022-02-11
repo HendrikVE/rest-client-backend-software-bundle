@@ -1,0 +1,25 @@
+From cf92bc602b55e441ff91d3203fd77e17d49f160e Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Tue, 1 Feb 2022 14:09:37 +0100
+Subject: [PATCH 2/3] Fix compilation when using debug flags
+
+---
+ MQTTSNGateway/src/linux/udp6/SensorNetwork.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/MQTTSNGateway/src/linux/udp6/SensorNetwork.cpp b/MQTTSNGateway/src/linux/udp6/SensorNetwork.cpp
+index 8cf077b..bc599e3 100644
+--- a/MQTTSNGateway/src/linux/udp6/SensorNetwork.cpp
++++ b/MQTTSNGateway/src/linux/udp6/SensorNetwork.cpp
+@@ -430,7 +430,7 @@ int UDPPort6::broadcast(const uint8_t* buf, uint32_t length)
+ 
+ #ifdef  DEBUG_NW
+     char addrBuf[INET6_ADDRSTRLEN];
+-    addr->sprint(addrBuf);
++    _grpAddr.sprint(addrBuf);
+     D_NWSTACK("sendto %s\n", addrBuf);
+ #endif
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,498 @@
+From 2c18cad1a041a35773cb5411926fc5e6d34c3e25 Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 22:46:07 +0200
+Subject: [PATCH 4/9] add new options target-accept and target-content-format
+
+---
+ .../eclipse/californium/core/coap/Option.java |   3 +-
+ .../core/coap/OptionNumberRegistry.java       |  18 +++
+ .../californium/core/coap/OptionSet.java      | 142 ++++++++++++++++++
+ californium-proxy2/pom.xml                    |  11 ++
+ .../californium/proxy2/CborConverter.java     |  52 +++++++
+ .../proxy2/http/Coap2HttpTranslator.java      |  76 +++++++++-
+ 6 files changed, 295 insertions(+), 7 deletions(-)
+ create mode 100644 californium-proxy2/src/main/java/org/eclipse/californium/proxy2/CborConverter.java
+
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/Option.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/Option.java
+index 0d8709957..f058a289f 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/Option.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/Option.java
+@@ -396,7 +396,8 @@ public class Option implements Comparable<Option> {
+ 			if (number == OptionNumberRegistry.BLOCK1 || number == OptionNumberRegistry.BLOCK2)
+ 				return "\"" + new BlockOption(value) + "\"";
+ 			int iValue = getIntegerValue();
+-			if (number == OptionNumberRegistry.ACCEPT || number == OptionNumberRegistry.CONTENT_FORMAT)
++			if (number == OptionNumberRegistry.ACCEPT || number == OptionNumberRegistry.CONTENT_FORMAT
++					|| number==OptionNumberRegistry.TARGET_ACCEPT || number==OptionNumberRegistry.TARGET_CONTENT_FORMAT)
+ 				return "\"" + MediaTypeRegistry.toString(iValue) + "\"";
+ 			else if (number == OptionNumberRegistry.NO_RESPONSE)
+ 				return "\"" + new NoResponseOption(iValue) + "\"";
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
+index bf2dd855e..d48d04ada 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
+@@ -63,6 +63,9 @@ public final class OptionNumberRegistry {
+ 	// RFC 8613
+ 	public static final int OSCORE			= 9;
+ 
++	public static final int TARGET_CONTENT_FORMAT = 55;
++	public static final int TARGET_ACCEPT         = 59;
++
+ 	// RFC 7967
+ 	public static final int NO_RESPONSE		= 258;
+ 
+@@ -96,6 +99,9 @@ public final class OptionNumberRegistry {
+ 
+ 		public static final String Object_Security	= "Object-Security";
+ 
++		public static final String Target_Content_Format = "Target-Content-Format";
++		public static final String Target_Accept         = "Target-Accept";
++
+ 		public static final String No_Response		= "No-Response";
+ 	}
+ 
+@@ -133,6 +139,8 @@ public final class OptionNumberRegistry {
+ 		case SIZE2:
+ 		case SIZE1:
+ 		case ACCEPT:
++		case TARGET_CONTENT_FORMAT:
++		case TARGET_ACCEPT:
+ 		case NO_RESPONSE:
+ 			return OptionFormat.INTEGER;
+ 		case IF_NONE_MATCH:
+@@ -257,6 +265,8 @@ public final class OptionNumberRegistry {
+ 		case BLOCK2:
+ 		case SIZE1:
+ 		case SIZE2:
++		case TARGET_CONTENT_FORMAT:
++		case TARGET_ACCEPT:
+ 		case NO_RESPONSE:
+ 		default:
+ 			return true;
+@@ -323,6 +333,8 @@ public final class OptionNumberRegistry {
+ 			break;
+ 		case URI_PORT:
+ 		case CONTENT_FORMAT:
++		case TARGET_CONTENT_FORMAT:
++		case TARGET_ACCEPT:
+ 		case ACCEPT:
+ 			max = 2;
+ 			break;
+@@ -439,6 +451,10 @@ public final class OptionNumberRegistry {
+ 			return Names.Size1;
+ 		case OSCORE:
+ 			return Names.Object_Security;
++		case TARGET_CONTENT_FORMAT:
++			return Names.Target_Content_Format;
++		case TARGET_ACCEPT:
++			return Names.Target_Accept;
+ 		case NO_RESPONSE:
+ 			return Names.No_Response;
+ 		default:
+@@ -467,6 +483,8 @@ public final class OptionNumberRegistry {
+ 		else if (Names.Size2.equals(name))			return SIZE2;
+ 		else if (Names.Size1.equals(name))			return SIZE1;
+ 		else if (Names.Object_Security.equals(name)) return OSCORE;
++		else if (Names.Target_Content_Format.equals(name)) return TARGET_CONTENT_FORMAT;
++		else if (Names.Target_Accept.equals(name)) return TARGET_ACCEPT;
+ 		else if (Names.No_Response.equals(name))	return NO_RESPONSE;
+ 		else return UNKNOWN;
+ 	}
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
+index 60d20fdec..a27f6dd9e 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
+@@ -83,6 +83,8 @@ public final class OptionSet {
+ 	private Integer      size2;
+ 	private Integer      observe;
+ 	private byte[]       oscore;
++	private Integer      target_content_format;
++	private Integer      target_accept;
+ 	private NoResponseOption no_response;
+ 
+ 	// Arbitrary options
+@@ -115,6 +117,8 @@ public final class OptionSet {
+ 		size2               = null;
+ 		observe             = null;
+ 		oscore              = null;
++		target_content_format = null;
++		target_accept       = null;
+ 		no_response         = null;
+ 
+ 		others              = null; // new LinkedList<>();
+@@ -153,6 +157,8 @@ public final class OptionSet {
+ 		if(origin.oscore != null) {
+ 			oscore          = origin.oscore.clone();
+ 		}
++		target_content_format = origin.target_content_format;
++		target_accept       = origin.target_accept;
+ 		no_response         = origin.no_response;
+ 		others              = copyList(origin.others);
+ 	}
+@@ -187,6 +193,8 @@ public final class OptionSet {
+ 		size2 = null;
+ 		observe = null;
+ 		oscore = null;
++		target_content_format = null;
++		target_accept = null;
+ 		no_response = null;
+ 		if (others != null)
+ 			others.clear();
+@@ -1436,6 +1444,130 @@ public final class OptionSet {
+ 		return this;
+ 	}
+ 
++	/**
++	 * Gets the Target-Content-Format Identifier of the Target-Content-Format option.
++	 *
++	 * @return the ID as int or -1 if undefined
++	 */
++	public int getTargetContentFormat() {
++		return hasTargetContentFormat() ? target_content_format : MediaTypeRegistry.UNDEFINED;
++	}
++
++	/**
++	 * Checks if the Target-Content-Format option is present.
++	 *
++	 * @return true if present
++	 */
++	public boolean hasTargetContentFormat() {
++		return target_content_format != null;
++	}
++
++	/**
++	 * Compares the Target-Content-Format option value to a given format.
++	 * <p>
++	 * Can be used by a server to check the Target-Content-Format of a request body
++	 * or by a client to check the Target-Content-Format of a response body.
++	 *
++	 * @param format the Target-Content-Format ID to compare with
++	 * @return true if equal
++	 * @see MediaTypeRegistry
++	 */
++	public boolean isTargetContentFormat(int format) {
++		return target_content_format != null && target_content_format == format;
++	}
++
++	/**
++	 * Sets the Target-Content-Format ID of the Target-Content-Format option.
++	 *
++	 * Note: if the value is out of range [0...65535], the target_content_format is
++	 * reset to {@code null}. In difference to other methods, no
++	 * {@link IllegalArgumentException} will be thrown.
++	 *
++	 * @param format the Target-Content-Format ID
++	 * @return this OptionSet for a fluent API.
++	 * @see MediaTypeRegistry
++	 */
++	public OptionSet setTargetContentFormat(int format) {
++		if (format > MediaTypeRegistry.UNDEFINED && format <= MediaTypeRegistry.MAX_TYPE) {
++			target_content_format = format;
++		} else {
++			target_content_format = null;
++		}
++		return this;
++	}
++
++	/**
++	 * Removes the Target-Content-Format option.
++	 *
++	 * @return this OptionSet for a fluent API.
++	 */
++	public OptionSet removeTargetContentFormat() {
++		target_content_format = null;
++		return this;
++	}
++
++	/**
++	 * Gets the Target-Accept Identifier of the Target-Accept option.
++	 *
++	 * @return the ID as int or -1 if undefined
++	 */
++	public int getTargetAccept() {
++		return hasTargetAccept() ? target_accept : MediaTypeRegistry.UNDEFINED;
++	}
++
++	/**
++	 * Checks if the Target-Accept option is present.
++	 *
++	 * @return true if present
++	 */
++	public boolean hasTargetAccept() {
++		return target_accept != null;
++	}
++
++	/**
++	 * Compares the Target-Accept option value to a given format.
++	 * <p>
++	 * Can be used by a server to check the Target-Accept of a request body
++	 * or by a client to check the Target-Accept of a response body.
++	 *
++	 * @param format the Target-Accept ID to compare with
++	 * @return true if equal
++	 * @see MediaTypeRegistry
++	 */
++	public boolean isTargetAccept(int format) {
++		return target_accept != null && target_accept == format;
++	}
++
++	/**
++	 * Sets the Target-Accept ID of the Target-Accept option.
++	 *
++	 * Note: if the value is out of range [0...65535], the target_accept is
++	 * reset to {@code null}. In difference to other methods, no
++	 * {@link IllegalArgumentException} will be thrown.
++	 *
++	 * @param format the Target-Accept ID
++	 * @return this OptionSet for a fluent API.
++	 * @see MediaTypeRegistry
++	 */
++	public OptionSet setTargetAccept(int format) {
++		if (format > MediaTypeRegistry.UNDEFINED && format <= MediaTypeRegistry.MAX_TYPE) {
++			target_accept = format;
++		} else {
++			target_accept = null;
++		}
++		return this;
++	}
++
++	/**
++	 * Removes the Target-Accept option.
++	 *
++	 * @return this OptionSet for a fluent API.
++	 */
++	public OptionSet removeTargetAccept() {
++		target_accept = null;
++		return this;
++	}
++
+ 	/**
+ 	 * Gets the NoResponse option.
+ 	 * 
+@@ -1585,6 +1717,10 @@ public final class OptionSet {
+ 			options.add(new Option(OptionNumberRegistry.SIZE2, getSize2()));
+ 		if (hasOscore())
+ 			options.add(new Option(OptionNumberRegistry.OSCORE, getOscore()));
++		if (hasTargetContentFormat())
++			options.add(new Option(OptionNumberRegistry.TARGET_CONTENT_FORMAT, getTargetContentFormat()));
++		if (hasTargetAccept())
++			options.add(new Option(OptionNumberRegistry.TARGET_ACCEPT, getTargetAccept()));
+ 		if (hasNoResponse())
+ 			options.add(getNoResponse().toOption());
+ 
+@@ -1697,6 +1833,12 @@ public final class OptionSet {
+ 		case OptionNumberRegistry.OSCORE:
+ 			setOscore(option.getValue());
+ 			break;
++		case OptionNumberRegistry.TARGET_CONTENT_FORMAT:
++			setTargetContentFormat(option.getIntegerValue());
++			break;
++		case OptionNumberRegistry.TARGET_ACCEPT:
++			setTargetAccept(option.getIntegerValue());
++			break;
+ 		case OptionNumberRegistry.NO_RESPONSE:
+ 			setNoResponse(option.getIntegerValue());
+ 			break;
+diff --git a/californium-proxy2/pom.xml b/californium-proxy2/pom.xml
+index f14fa12dd..35a6b0bc8 100644
+--- a/californium-proxy2/pom.xml
++++ b/californium-proxy2/pom.xml
+@@ -64,6 +64,17 @@
+ 			<artifactId>httpcore5</artifactId>
+ 			<version>${httpcore5.version}</version>
+ 		</dependency>
++		<dependency>
++			<groupId>com.google.iot.cbor</groupId>
++			<artifactId>cbor</artifactId>
++			<version>0.01.02</version>
++			<exclusions>
++				<exclusion>
++					<groupId>com.google.errorprone</groupId>
++					<artifactId>error_prone_annotations</artifactId>
++				</exclusion>
++			</exclusions>
++		</dependency>
+ 
+ 		<!-- test dependencies -->
+ 		<dependency>
+diff --git a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/CborConverter.java b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/CborConverter.java
+new file mode 100644
+index 000000000..2ff7b1d5f
+--- /dev/null
++++ b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/CborConverter.java
+@@ -0,0 +1,52 @@
++package org.eclipse.californium.proxy2;
++
++import com.google.iot.cbor.CborMap;
++import com.google.iot.cbor.CborParseException;
++import org.eclipse.californium.core.coap.MediaTypeRegistry;
++import org.eclipse.californium.elements.util.StandardCharsets;
++import org.json.JSONObject;
++
++import java.io.IOException;
++import java.io.UnsupportedEncodingException;
++
++public class CborConverter {
++
++    public byte[] convertTo(byte[] payload, int targetFormat) throws IOException, IllegalArgumentException {
++
++        if (MediaTypeRegistry.toFileExtension(targetFormat).equals("json")) {
++            try {
++                CborMap cborMap = CborMap.createFromCborByteArray(payload);
++
++                return cborMap.toJsonString().getBytes("UTF-8");
++            }
++            catch (CborParseException | UnsupportedEncodingException e) {
++                throw new IOException(e.getMessage());
++            }
++        } else {
++            String errorString = String.format(
++                    "Conversion from %s to %s not supported!",
++                    MediaTypeRegistry.toString(MediaTypeRegistry.APPLICATION_CBOR),
++                    MediaTypeRegistry.toString(targetFormat));
++
++            throw new IllegalArgumentException(errorString);
++        }
++    }
++
++    public byte[] convertFrom(byte[] payload, int sourceFormat) throws IllegalArgumentException {
++
++        if (MediaTypeRegistry.toFileExtension(sourceFormat).equals("json")) {
++            JSONObject jsonObject = new JSONObject(new String(payload, StandardCharsets.UTF_8));
++            CborMap cborMap = CborMap.createFromJSONObject(jsonObject);
++
++            return cborMap.toCborByteArray();
++        } else {
++            String errorString = String.format(
++                    "Conversion from %s to %s not supported!",
++                    MediaTypeRegistry.toString(sourceFormat),
++                    MediaTypeRegistry.toString(MediaTypeRegistry.APPLICATION_CBOR));
++
++            throw new IllegalArgumentException(errorString);
++        }
++    }
++
++}
+diff --git a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java
+index 67f9d86f3..1991cdfc1 100644
+--- a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java
++++ b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/Coap2HttpTranslator.java
+@@ -15,19 +15,23 @@
+  ******************************************************************************/
+ package org.eclipse.californium.proxy2.http;
+ 
++import java.io.IOException;
+ import java.net.URI;
+ import java.util.List;
+ 
++import org.apache.hc.core5.http.ContentType;
+ import org.apache.hc.core5.http.Header;
+ import org.apache.hc.core5.http.HttpResponse;
+ import org.apache.hc.core5.http.Message;
+ import org.apache.hc.core5.http.message.BasicHttpRequest;
+ import org.eclipse.californium.core.coap.CoAP.Code;
+ import org.eclipse.californium.core.coap.CoAP.ResponseCode;
++import org.eclipse.californium.core.coap.MediaTypeRegistry;
+ import org.eclipse.californium.core.coap.Option;
+ import org.eclipse.californium.core.coap.OptionNumberRegistry;
+ import org.eclipse.californium.core.coap.Request;
+ import org.eclipse.californium.core.coap.Response;
++import org.eclipse.californium.proxy2.CborConverter;
+ import org.eclipse.californium.proxy2.CoapUriTranslator;
+ import org.eclipse.californium.proxy2.TranslationException;
+ import org.slf4j.Logger;
+@@ -107,15 +111,48 @@ public class Coap2HttpTranslator extends CoapUriTranslator {
+ 		// create the http request
+ 		BasicHttpRequest httpRequest = new BasicHttpRequest(coapMethod, uri);
+ 
+-		// get the http body
+-		ContentTypedEntity httpEntity = httpTranslator.getHttpEntity(coapRequest);
+-
+ 		// set the headers
+ 		Header[] headers = httpTranslator.getHttpHeaders(coapRequest.getOptions().asSortedList(), etagTranslator);
+ 		for (Header header : headers) {
+ 			httpRequest.addHeader(header);
+ 		}
+ 
++		if (coapRequest.getOptions().hasOption(OptionNumberRegistry.TARGET_ACCEPT)) {
++			httpRequest.setHeader("accept", MediaTypeRegistry.toString(coapRequest.getOptions().getTargetAccept()));
++		}
++
++		ContentTypedEntity httpEntity;
++
++		if (coapRequest.getOptions().hasOption(OptionNumberRegistry.TARGET_CONTENT_FORMAT)) {
++
++			int sourceFormat = coapRequest.getOptions().getContentFormat();
++			int targetFormat = coapRequest.getOptions().getTargetContentFormat();
++
++			// Todo: put logic in to CrossProtocolTranslator.java
++			if (sourceFormat == MediaTypeRegistry.APPLICATION_CBOR) {
++
++				CborConverter cborConverter = new CborConverter();
++
++				try {
++					byte[] convertedPayload = cborConverter.convertTo(coapRequest.getPayload(), targetFormat);
++					coapRequest.getOptions().setContentFormat(targetFormat);
++					coapRequest.setPayload(convertedPayload);
++
++					ContentType httpContentType = httpTranslator.getHttpContentType(targetFormat);
++					httpEntity = new ContentTypedEntity(httpContentType, convertedPayload);
++				} catch (IOException | IllegalArgumentException e) {
++					throw new TranslationException(e.getMessage());
++				}
++			}
++			else {
++				throw new TranslationException("Format conversion not yet implemented for source format "
++						+ MediaTypeRegistry.toString(sourceFormat));
++			}
++		} else {
++			// get the http body
++			httpEntity = httpTranslator.getHttpEntity(coapRequest);
++		}
++
+ 		LOGGER.debug("Incoming request translated correctly");
+ 		return new ProxyRequestProducer(httpRequest, ContentTypedEntity.createProducer(httpEntity));
+ 	}
+@@ -174,9 +211,36 @@ public class Coap2HttpTranslator extends CoapUriTranslator {
+ 			}
+ 		}
+ 
+-		// translate the http body in coap payload
+-		ContentTypedEntity entity = httpResponse.getBody();
+-		httpTranslator.setCoapPayload(entity, coapResponse);
++
++		// Todo: put logic in to CrossProtocolTranslator.java
++		byte[] payload = httpResponse.getBody().getContent();
++		if (payload != null && payload.length > 0
++				&& coapRequest.getOptions().hasOption(OptionNumberRegistry.ACCEPT)) {
++
++			int sourceFormat = httpTranslator.getCoapMediaType(httpResponse.getBody().getContentType().getMimeType());
++			int targetFormat = coapRequest.getOptions().getAccept();
++
++			if (targetFormat == MediaTypeRegistry.APPLICATION_CBOR) {
++
++				CborConverter cborConverter = new CborConverter();
++
++				try {
++					byte[] convertedPayload = cborConverter.convertFrom(payload, sourceFormat);
++					coapResponse.getOptions().setContentFormat(targetFormat);
++					coapResponse.setPayload(convertedPayload);
++				} catch (IllegalArgumentException e) {
++					throw new TranslationException(e.getMessage());
++				}
++			}
++			else {
++				throw new TranslationException("Format conversion not yet implemented for target format "
++						+ MediaTypeRegistry.toString(targetFormat));
++			}
++		} else {
++			// translate the http body in coap payload
++			ContentTypedEntity entity = httpResponse.getBody();
++			httpTranslator.setCoapPayload(entity, coapResponse);
++		}
+ 
+ 		LOGGER.debug("Incoming response translated correctly");
+ 
+-- 
+2.25.1
+

@@ -1,0 +1,343 @@
+From 86c2bdcc2fa5825099d8e85bf5843cd8da563d59 Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 22:50:55 +0200
+Subject: [PATCH 7/9] add CoapSecureServer
+
+---
+ .../eclipse/californium/core/CoapServer.java  |  20 +-
+ .../examples/CoapSecureServer.java            | 271 ++++++++++++++++++
+ 2 files changed, 285 insertions(+), 6 deletions(-)
+ create mode 100644 demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/CoapSecureServer.java
+
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/CoapServer.java b/californium-core/src/main/java/org/eclipse/californium/core/CoapServer.java
+index 7a4dcb211..faf4ee6e4 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/CoapServer.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/CoapServer.java
+@@ -131,7 +131,7 @@ public class CoapServer implements ServerInterface, PersistentComponentProvider
+ 	private final Resource root;
+ 
+ 	/** The configuration used by this server. */
+-	private final Configuration config;
++	protected final Configuration config;
+ 
+ 	/** The message deliverer. */
+ 	private MessageDeliverer deliverer;
+@@ -224,10 +224,7 @@ public class CoapServer implements ServerInterface, PersistentComponentProvider
+ 		// create endpoint for each port
+ 		if (ports != null) {
+ 			for (int port : ports) {
+-				CoapEndpoint.Builder builder = new CoapEndpoint.Builder();
+-				builder.setPort(port);
+-				builder.setConfiguration(config);
+-				addEndpoint(builder.build());
++				addEndpoint(config, port);
+ 			}
+ 		}
+ 	}
+@@ -244,6 +241,17 @@ public class CoapServer implements ServerInterface, PersistentComponentProvider
+ 		}
+ 	}
+ 
++	protected int getDefaultPort() {
++		return config.get(CoapConfig.COAP_PORT);
++	}
++
++	protected void addEndpoint(Configuration config, int port) {
++		CoapEndpoint.Builder builder = new CoapEndpoint.Builder();
++		builder.setPort(port);
++		builder.setConfiguration(config);
++		addEndpoint(builder.build());
++	}
++
+ 	public synchronized void setExecutors(final ScheduledExecutorService mainExecutor,
+ 			final ScheduledExecutorService secondaryExecutor, final boolean detach) {
+ 		if (mainExecutor == null || secondaryExecutor == null) {
+@@ -303,7 +311,7 @@ public class CoapServer implements ServerInterface, PersistentComponentProvider
+ 		if (endpoints.isEmpty()) {
+ 			// servers should bind to the configured port (while clients should
+ 			// use an ephemeral port through the default endpoint)
+-			int port = config.get(CoapConfig.COAP_PORT);
++			int port = getDefaultPort();
+ 			LOGGER.info("{}no endpoints have been defined for server, setting up server endpoint on default port {}",
+ 					getTag(), port);
+ 			CoapEndpoint.Builder builder = new CoapEndpoint.Builder();
+diff --git a/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/CoapSecureServer.java b/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/CoapSecureServer.java
+new file mode 100644
+index 000000000..a55b7e681
+--- /dev/null
++++ b/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/CoapSecureServer.java
+@@ -0,0 +1,271 @@
++package org.eclipse.californium.examples;
++
++import org.eclipse.californium.core.CoapServer;
++import org.eclipse.californium.core.config.CoapConfig;
++import org.eclipse.californium.core.network.CoapEndpoint;
++import org.eclipse.californium.core.network.Endpoint;
++import org.eclipse.californium.elements.config.CertificateAuthenticationMode;
++import org.eclipse.californium.elements.config.Configuration;
++import org.eclipse.californium.elements.util.SslContextUtil;
++import org.eclipse.californium.scandium.DTLSConnector;
++import org.eclipse.californium.scandium.config.DtlsConfig;
++import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
++import org.eclipse.californium.scandium.dtls.CertificateType;
++import org.eclipse.californium.scandium.dtls.cipher.CipherSuite;
++import org.eclipse.californium.scandium.dtls.pskstore.AdvancedMultiPskStore;
++import org.eclipse.californium.scandium.dtls.x509.KeyManagerCertificateProvider;
++import org.eclipse.californium.scandium.dtls.x509.StaticNewAdvancedCertificateVerifier;
++
++import javax.net.ssl.KeyManager;
++import javax.net.ssl.X509KeyManager;
++import java.io.IOException;
++import java.net.InetSocketAddress;
++import java.security.GeneralSecurityException;
++import java.security.cert.Certificate;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++
++public class CoapSecureServer extends CoapServer {
++
++    // from ETSI Plugtest test spec
++    public static final String PSK_IDENTITY = "password";
++    public static final byte[] PSK_SECRET = "sesame".getBytes();
++
++    public static final String OPEN_PSK_IDENTITY = "Client_identity";
++    public static final byte[] OPEN_PSK_SECRET = "secretPSK".getBytes();
++
++    // CID
++    public static final int DEFAULT_CID_LENGTH = 6;
++
++    // from demo-certs
++    public static final String SERVER_NAME = "server.*";
++    private static final String TRUST_NAME = "root";
++    private static final char[] TRUST_STORE_PASSWORD = "rootPass".toCharArray();
++    private static final char[] KEY_STORE_PASSWORD = "endPass".toCharArray();
++    private static final String KEY_STORE_LOCATION = "certs/keyStore.jks";
++    private static final String TRUST_STORE_LOCATION = "certs/trustStore.jks";
++
++    /**
++     * Credentials mode.
++     */
++    public enum Mode {
++        /**
++         * Preshared secret keys.
++         */
++        PSK,
++        /**
++         * EC DHE, preshared secret keys.
++         */
++        ECDHE_PSK,
++        /**
++         * Raw public key certificates.
++         */
++        RPK,
++        /**
++         * X.509 certificates.
++         */
++        X509,
++        /**
++         * raw public key certificates just trusted (client only).
++         */
++        RPK_TRUST,
++        /**
++         * X.509 certificates just trusted (client only).
++         */
++        X509_TRUST,
++        /**
++         * Client authentication wanted (server only).
++         */
++        WANT_AUTH,
++        /**
++         * No client authentication (server only).
++         */
++        NO_AUTH,
++    }
++
++    /**
++     * Constructs a default server. The server starts after the method
++     * {@link #start()} is called. If a server starts and has no specific ports
++     * assigned, it will bind to CoAPS's default port 5684.
++     */
++    public CoapSecureServer() {
++        this(Configuration.getStandard());
++    }
++
++    /**
++     * Constructs a server that listens to the specified port(s) after method
++     * {@link #start()} is called.
++     *
++     * @param ports the ports to bind to. If empty or {@code null} and no
++     *            endpoints are added with {@link #addEndpoint(Endpoint)}, it
++     *            will bind to CoAPS's default port 5684 on {@link #start()}.
++     */
++    public CoapSecureServer(final int... ports) {
++        this(Configuration.getStandard(), ports);
++    }
++
++    /**
++     * Constructs a server with the specified configuration that listens to the
++     * specified ports after method {@link #start()} is called.
++     *
++     * @param config the configuration, if {@code null} the configuration
++     *            returned by {@link Configuration#getStandard()} is used.
++     * @param ports the ports to bind to. If empty or {@code null} and no
++     *            endpoints are added with {@link #addEndpoint(Endpoint)}, it
++     *            will bind to CoAPS's default port 5684 on {@link #start()}.
++     * @since 3.0 (changed parameter to Configuration)
++     */
++    public CoapSecureServer(final Configuration config, final int... ports) {
++        super(config, ports);
++    }
++
++    @Override
++    protected int getDefaultPort() {
++        return config.get(CoapConfig.COAP_SECURE_PORT);
++    }
++
++    @Override
++    protected void addEndpoint(Configuration config, int port) {
++
++        DtlsConnectorConfig.Builder builder = new DtlsConnectorConfig.Builder(config);
++        builder.set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, DEFAULT_CID_LENGTH);
++        builder.setAddress(new InetSocketAddress(port));
++
++        List<Mode> modes = Arrays.asList(Mode.PSK, Mode.ECDHE_PSK, Mode.RPK, Mode.X509, Mode.WANT_AUTH, Mode.NO_AUTH);
++        try {
++            setupCredentials(builder, SERVER_NAME, modes);
++        } catch (IllegalArgumentException e) {
++            System.err.println(e.getMessage());
++        }
++
++        DTLSConnector connector = new DTLSConnector(builder.build());
++
++        CoapEndpoint.Builder coapBuilder = new CoapEndpoint.Builder()
++                .setConfiguration(config)
++                .setConnector(connector);
++        addEndpoint(coapBuilder.build());
++    }
++
++    /* TODO: copy&pasted from cf-secure's CredentialsUtil :( */
++    public static void setupCredentials(DtlsConnectorConfig.Builder config, String certificateAlias, List<Mode> modes) {
++
++        boolean ecdhePsk = modes.contains(Mode.ECDHE_PSK);
++        boolean plainPsk = modes.contains(Mode.PSK);
++        boolean psk = ecdhePsk || plainPsk;
++
++        if (psk && config.getIncompleteConfig().getAdvancedPskStore() == null) {
++            // Pre-shared secret keys
++            AdvancedMultiPskStore pskStore = new AdvancedMultiPskStore();
++            pskStore.setKey(PSK_IDENTITY, PSK_SECRET);
++            pskStore.setKey(OPEN_PSK_IDENTITY, OPEN_PSK_SECRET);
++            config.setAdvancedPskStore(pskStore);
++        }
++        boolean noAuth = modes.contains(Mode.NO_AUTH);
++        boolean x509Trust = modes.contains(Mode.X509_TRUST);
++        boolean rpkTrust = modes.contains(Mode.RPK_TRUST);
++        int x509 = modes.indexOf(Mode.X509);
++        int rpk = modes.indexOf(Mode.RPK);
++        boolean certificate = false;
++
++        if (noAuth) {
++            if (x509Trust) {
++                throw new IllegalArgumentException(Mode.NO_AUTH + " doesn't support " + Mode.X509_TRUST);
++            }
++            if (rpkTrust) {
++                throw new IllegalArgumentException(Mode.NO_AUTH + " doesn't support " + Mode.RPK_TRUST);
++            }
++            config.set(DtlsConfig.DTLS_CLIENT_AUTHENTICATION_MODE, CertificateAuthenticationMode.NONE);
++        } else if (modes.contains(Mode.WANT_AUTH)) {
++            config.set(DtlsConfig.DTLS_CLIENT_AUTHENTICATION_MODE, CertificateAuthenticationMode.WANTED);
++        }
++        Configuration configuration = config.getIncompleteConfig().getConfiguration();
++        StaticNewAdvancedCertificateVerifier.Builder trustBuilder = StaticNewAdvancedCertificateVerifier.builder();
++        if (x509 >= 0 || rpk >= 0) {
++            try {
++                // try to read certificates
++                KeyManager[] credentials = SslContextUtil.loadKeyManager(
++                        SslContextUtil.CLASSPATH_SCHEME + KEY_STORE_LOCATION, certificateAlias, KEY_STORE_PASSWORD,
++                        KEY_STORE_PASSWORD);
++                if (!noAuth) {
++                    if (x509 >= 0) {
++                        Certificate[] trustedCertificates = SslContextUtil.loadTrustedCertificates(
++                                SslContextUtil.CLASSPATH_SCHEME + TRUST_STORE_LOCATION, TRUST_NAME,
++                                TRUST_STORE_PASSWORD);
++                        trustBuilder.setTrustedCertificates(trustedCertificates);
++                    }
++                    if (rpk >= 0) {
++                        trustBuilder.setTrustAllRPKs();
++                    }
++                }
++                List<CertificateType> types = new ArrayList<>();
++                if (x509 >= 0 && rpk >= 0) {
++                    if (rpk < x509) {
++                        types.add(CertificateType.RAW_PUBLIC_KEY);
++                        types.add(CertificateType.X_509);
++                    } else {
++                        types.add(CertificateType.X_509);
++                        types.add(CertificateType.RAW_PUBLIC_KEY);
++                    }
++                } else if (x509 >= 0) {
++                    types.add(CertificateType.X_509);
++                } else if (rpk >= 0) {
++                    types.add(CertificateType.RAW_PUBLIC_KEY);
++                }
++                X509KeyManager keyManager = SslContextUtil.getX509KeyManager(credentials);
++                KeyManagerCertificateProvider certificateProvider = new KeyManagerCertificateProvider(keyManager,
++                        types);
++                config.setCertificateIdentityProvider(certificateProvider);
++                certificate = true;
++            } catch (GeneralSecurityException e) {
++                e.printStackTrace();
++                System.err.println("certificates are invalid!");
++                if (psk) {
++                    System.err.println("Therefore certificates are not supported!");
++                } else {
++                    throw new IllegalArgumentException(e.getMessage());
++                }
++            } catch (IOException e) {
++                e.printStackTrace();
++                System.err.println("certificates are missing!");
++                if (psk) {
++                    System.err.println("Therefore certificates are not supported!");
++                } else {
++                    throw new IllegalArgumentException(e.getMessage());
++                }
++            }
++        }
++        if (x509Trust) {
++            // trust all
++            trustBuilder.setTrustAllCertificates();
++        }
++        if (rpkTrust) {
++            // trust all
++            trustBuilder.setTrustAllRPKs();
++        }
++        if (trustBuilder.hasTrusts()) {
++            certificate = true;
++            config.setAdvancedCertificateVerifier(trustBuilder.build());
++        }
++        List<CipherSuite> ciphers = configuration.get(DtlsConfig.DTLS_PRESELECTED_CIPHER_SUITES);
++        List<CipherSuite> selectedCiphers = new ArrayList<>();
++        for (CipherSuite cipherSuite : ciphers) {
++            CipherSuite.KeyExchangeAlgorithm keyExchange = cipherSuite.getKeyExchange();
++            if (keyExchange == CipherSuite.KeyExchangeAlgorithm.PSK) {
++                if (plainPsk) {
++                    selectedCiphers.add(cipherSuite);
++                }
++            } else if (keyExchange == CipherSuite.KeyExchangeAlgorithm.ECDHE_PSK) {
++                if (ecdhePsk) {
++                    selectedCiphers.add(cipherSuite);
++                }
++            } else if (keyExchange == CipherSuite.KeyExchangeAlgorithm.EC_DIFFIE_HELLMAN) {
++                if (certificate) {
++                    selectedCiphers.add(cipherSuite);
++                }
++            }
++        }
++        configuration.set(DtlsConfig.DTLS_PRESELECTED_CIPHER_SUITES, selectedCiphers);
++    }
++
++}
+-- 
+2.25.1
+

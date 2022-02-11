@@ -1,0 +1,191 @@
+From bf89f7d5f1872cb1981e3e60ad0f03c946870d62 Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 22:49:12 +0200
+Subject: [PATCH 6/9] add new option authorization
+
+---
+ .../core/coap/OptionNumberRegistry.java       |  8 +++
+ .../californium/core/coap/OptionSet.java      | 51 +++++++++++++++++++
+ .../proxy2/http/MappingProperties.java        |  1 +
+ 3 files changed, 60 insertions(+)
+
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
+index bca675863..76e2310da 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionNumberRegistry.java
+@@ -66,6 +66,7 @@ public final class OptionNumberRegistry {
+ 	public static final int TARGET_CONTENT_FORMAT = 55;
+ 	public static final int TARGET_ACCEPT         = 59;
+ 	public static final int PROXY_HTTP_STATUS     = 67;
++	public static final int AUTHORIZATION         = 249;
+ 
+ 	// RFC 7967
+ 	public static final int NO_RESPONSE		= 258;
+@@ -103,6 +104,7 @@ public final class OptionNumberRegistry {
+ 		public static final String Target_Content_Format = "Target-Content-Format";
+ 		public static final String Target_Accept         = "Target-Accept";
+ 		public static final String Proxy_Http_Status     = "Proxy-Http-Status";
++		public static final String Authorization     = "Authorization";
+ 
+ 		public static final String No_Response		= "No-Response";
+ 	}
+@@ -155,6 +157,7 @@ public final class OptionNumberRegistry {
+ 		case LOCATION_QUERY:
+ 		case PROXY_URI:
+ 		case PROXY_SCHEME:
++		case AUTHORIZATION:
+ 			return OptionFormat.STRING;
+ 		case ETAG:
+ 		case IF_MATCH:
+@@ -280,6 +283,7 @@ public final class OptionNumberRegistry {
+ 		case URI_QUERY:
+ 		case LOCATION_PATH:
+ 		case LOCATION_QUERY:
++		case AUTHORIZATION:
+ 			return false;
+ 		}
+ 	}
+@@ -351,6 +355,7 @@ public final class OptionNumberRegistry {
+ 		case LOCATION_PATH:
+ 		case LOCATION_QUERY:
+ 		case OSCORE:
++		case AUTHORIZATION:
+ 			max = 255;
+ 			break;
+ 
+@@ -462,6 +467,8 @@ public final class OptionNumberRegistry {
+ 			return Names.Target_Accept;
+ 		case PROXY_HTTP_STATUS:
+ 			return Names.Proxy_Http_Status;
++		case AUTHORIZATION:
++			return Names.Authorization;
+ 		case NO_RESPONSE:
+ 			return Names.No_Response;
+ 		default:
+@@ -493,6 +500,7 @@ public final class OptionNumberRegistry {
+ 		else if (Names.Target_Content_Format.equals(name)) return TARGET_CONTENT_FORMAT;
+ 		else if (Names.Target_Accept.equals(name)) return TARGET_ACCEPT;
+ 		else if (Names.Proxy_Http_Status.equals(name)) return PROXY_HTTP_STATUS;
++		else if (Names.Authorization.equals(name)) return AUTHORIZATION;
+ 		else if (Names.No_Response.equals(name))	return NO_RESPONSE;
+ 		else return UNKNOWN;
+ 	}
+diff --git a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
+index b51e494ce..924e6b33e 100644
+--- a/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
++++ b/californium-core/src/main/java/org/eclipse/californium/core/coap/OptionSet.java
+@@ -86,6 +86,7 @@ public final class OptionSet {
+ 	private Integer      target_content_format;
+ 	private Integer      target_accept;
+ 	private Integer      proxy_http_status;
++	private String       authorization;
+ 	private NoResponseOption no_response;
+ 
+ 	// Arbitrary options
+@@ -121,6 +122,7 @@ public final class OptionSet {
+ 		target_content_format = null;
+ 		target_accept       = null;
+ 		proxy_http_status   = null;
++		authorization       = null;
+ 		no_response         = null;
+ 
+ 		others              = null; // new LinkedList<>();
+@@ -162,6 +164,7 @@ public final class OptionSet {
+ 		target_content_format = origin.target_content_format;
+ 		target_accept       = origin.target_accept;
+ 		proxy_http_status   = origin.proxy_http_status;
++		authorization       = origin.authorization;
+ 		no_response         = origin.no_response;
+ 		others              = copyList(origin.others);
+ 	}
+@@ -199,6 +202,7 @@ public final class OptionSet {
+ 		target_content_format = null;
+ 		target_accept = null;
+ 		proxy_http_status   = null;
++		authorization = null;
+ 		no_response = null;
+ 		if (others != null)
+ 			others.clear();
+@@ -1611,6 +1615,48 @@ public final class OptionSet {
+ 		return this;
+ 	}
+ 
++	/**
++	 * Gets the string value of the Authorization option.
++	 *
++	 * @return the authorization string or null if the option is not present
++	 */
++	public String getAuthorization() {
++		return authorization;
++	}
++
++	/**
++	 * Checks if the Authorization option is present.
++	 *
++	 * @return {@code true}, if present
++	 */
++	public boolean hasAuthorization() {
++		return authorization != null;
++	}
++
++	/**
++	 * Sets the Authorization option.
++	 *
++	 * @param authorizationString the authorization string value to set.
++	 * @return this OptionSet for a fluent API.
++	 * @throws NullPointerException if the authorization string is {@code null}
++	 * @throws IllegalArgumentException if the authorization string has less than 1 or more than 255 bytes.
++	 */
++	public OptionSet setAuthorization(String authorizationString) {
++		checkOptionValue(OptionNumberRegistry.AUTHORIZATION, authorizationString);
++		authorization = authorizationString;
++		return this;
++	}
++
++	/**
++	 * Removes the Authorization option.
++	 *
++	 * @return this OptionSet for a fluent API.
++	 */
++	public OptionSet removeAuthorization() {
++		authorization = null;
++		return this;
++	}
++
+ 	/**
+ 	 * Gets the NoResponse option.
+ 	 * 
+@@ -1766,6 +1812,8 @@ public final class OptionSet {
+ 			options.add(new Option(OptionNumberRegistry.TARGET_ACCEPT, getTargetAccept()));
+ 		if (hasProxyHttpStatus())
+ 			options.add(new Option(OptionNumberRegistry.PROXY_HTTP_STATUS, getProxyHttpStatus()));
++		if (hasAuthorization())
++			options.add(new Option(OptionNumberRegistry.AUTHORIZATION, getAuthorization()));
+ 		if (hasNoResponse())
+ 			options.add(getNoResponse().toOption());
+ 
+@@ -1887,6 +1935,9 @@ public final class OptionSet {
+ 		case OptionNumberRegistry.PROXY_HTTP_STATUS:
+ 			setProxyHttpStatus(option.getIntegerValue());
+ 			break;
++		case OptionNumberRegistry.AUTHORIZATION:
++			setAuthorization(option.getStringValue());
++			break;
+ 		case OptionNumberRegistry.NO_RESPONSE:
+ 			setNoResponse(option.getIntegerValue());
+ 			break;
+diff --git a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/MappingProperties.java b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/MappingProperties.java
+index bcc13b7a6..45ae78f57 100644
+--- a/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/MappingProperties.java
++++ b/californium-proxy2/src/main/java/org/eclipse/californium/proxy2/http/MappingProperties.java
+@@ -658,6 +658,7 @@ public class MappingProperties extends Properties {
+ 		set(KEY_COAP_OPTION + OptionNumberRegistry.ACCEPT, "Accept");
+ 		set(KEY_COAP_OPTION + OptionNumberRegistry.IF_MATCH, "If-Match");
+ 		set(KEY_COAP_OPTION + OptionNumberRegistry.IF_NONE_MATCH, "If-None-Match");
++		set(KEY_COAP_OPTION + OptionNumberRegistry.AUTHORIZATION, "Authorization");
+ 
+ 		/* Media types */
+ 		set(KEY_HTTP_CONTENT_TYPE + "text/plain", MediaTypeRegistry.TEXT_PLAIN);
+-- 
+2.25.1
+

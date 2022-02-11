@@ -1,0 +1,39 @@
+From cecccc8dabebcabeccb9016c2b89b124698df080 Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 22:51:11 +0200
+Subject: [PATCH 1/9] drop! log everything
+
+---
+ demo-apps/cf-proxy2/src/main/resources/logback.xml | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/demo-apps/cf-proxy2/src/main/resources/logback.xml b/demo-apps/cf-proxy2/src/main/resources/logback.xml
+index 5cfed4c20..16ad70d21 100644
+--- a/demo-apps/cf-proxy2/src/main/resources/logback.xml
++++ b/demo-apps/cf-proxy2/src/main/resources/logback.xml
+@@ -8,19 +8,19 @@
+ 		</encoder>
+ 	</appender>
+ 
+-	<logger name="org.eclipse.californium.proxy2" level="WARN" additivity="false">
++	<logger name="org.eclipse.californium.proxy2" level="DEBUG" additivity="false">
+ 		<appender-ref ref="STDOUT" />
+ 	</logger>
+ 	<logger name="org.eclipse.californium.unixhealth.NetStatLogger" level="DEBUG" additivity="false">
+ 		<appender-ref ref="STDOUT" />
+ 	</logger>
+-	<logger name="ch.qos.logback" level="ERROR" additivity="false">
++	<logger name="ch.qos.logback" level="DEBUG" additivity="false">
+ 		<appender-ref ref="STDOUT" />
+ 	</logger>
+ 
+ 	<!-- Strictly speaking, the level attribute is not necessary since -->
+ 	<!-- the level of the root level is set to DEBUG by default. -->
+-	<root level="WARN">
++	<root level="DEBUG">
+ 		<appender-ref ref="STDOUT" />
+ 	</root>
+ 
+-- 
+2.25.1
+

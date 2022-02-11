@@ -1,0 +1,170 @@
+From 04e3a992085ec519b7f5ba1dd6dfcd35cf53c02a Mon Sep 17 00:00:00 2001
+From: HendrikVE <hendrik1995@msn.com>
+Date: Sat, 23 Apr 2022 23:06:58 +0200
+Subject: [PATCH 8/9] add cli option for secure server
+
+---
+ .../examples/ExampleCrossProxy2.java          | 91 ++++++++++++-------
+ .../eclipse/californium/examples/Proxy2.java  |  4 +-
+ 2 files changed, 62 insertions(+), 33 deletions(-)
+
+diff --git a/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/ExampleCrossProxy2.java b/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/ExampleCrossProxy2.java
+index a7e73cd95..d93612315 100644
+--- a/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/ExampleCrossProxy2.java
++++ b/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/ExampleCrossProxy2.java
+@@ -62,6 +62,8 @@ import org.eclipse.californium.proxy2.resources.ProxyCoapClientResource;
+ import org.eclipse.californium.proxy2.resources.ProxyCoapResource;
+ import org.eclipse.californium.proxy2.resources.ProxyHttpClientResource;
+ import org.eclipse.californium.proxy2.resources.StatsResource;
++import org.eclipse.californium.scandium.config.DtlsConfig;
++import org.eclipse.californium.scandium.dtls.cipher.CipherSuite;
+ import org.eclipse.californium.unixhealth.NetStatLogger;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -157,9 +159,13 @@ public class ExampleCrossProxy2 {
+ 	private int httpPort;
+ 	private CacheResource cache;
+ 
+-	public ExampleCrossProxy2(Configuration config, boolean accept, boolean cache) throws IOException {
++	public ExampleCrossProxy2(Configuration config, boolean accept, boolean cache, boolean secure) throws IOException {
+ 		HttpClientFactory.setNetworkConfig(config);
+-		coapPort = config.get(CoapConfig.COAP_PORT);
++		if (secure) {
++			coapPort = config.get(CoapConfig.COAP_SECURE_PORT);
++		} else {
++			coapPort = config.get(CoapConfig.COAP_PORT);
++		}
+ 		httpPort = config.get(Proxy2Config.HTTP_PORT);
+ 		int threads = config.get(CoapConfig.PROTOCOL_STAGE_THREAD_COUNT);
+ 		ScheduledExecutorService mainExecutor = ExecutorsUtil.newScheduledThreadPool(threads,
+@@ -184,7 +190,7 @@ public class ExampleCrossProxy2 {
+ 			statsResource = new StatsResource(cacheResource);
+ 		}
+ 		ProxyCoapResource coap2coap = new ProxyCoapClientResource(COAP2COAP, false, accept, translater, endpoints);
+-		ProxyCoapResource coap2http = new ProxyHttpClientResource(COAP2HTTP, false, accept, new Coap2HttpTranslator());
++		ProxyCoapResource coap2http = new ProxyHttpClientResource(COAP2HTTP, false, accept, new Coap2HttpTranslator(), "http", "https");
+ 		if (cache) {
+ 			coap2coap.setCache(cacheResource);
+ 			coap2coap.setStatsResource(statsResource);
+@@ -192,7 +198,14 @@ public class ExampleCrossProxy2 {
+ 			coap2http.setStatsResource(statsResource);
+ 		}
+ 		// Forwards requests Coap to Coap or Coap to Http server
+-		coapProxyServer = new CoapServer(config, coapPort);
++		if (secure) {
++			config.set(DtlsConfig.DTLS_ROLE, DtlsConfig.DtlsRole.SERVER_ONLY);
++			config.set(DtlsConfig.DTLS_RECOMMENDED_CIPHER_SUITES_ONLY, false);
++			config.set(DtlsConfig.DTLS_PRESELECTED_CIPHER_SUITES, CipherSuite.STRONG_ENCRYPTION_PREFERENCE);
++			coapProxyServer = new CoapSecureServer(config, coapPort);
++		} else {
++			coapProxyServer = new CoapServer(config, coapPort);
++		}
+ 		MessageDeliverer local = coapProxyServer.getMessageDeliverer();
+ 		ForwardProxyMessageDeliverer proxyMessageDeliverer = new ForwardProxyMessageDeliverer(coapProxyServer.getRoot(),
+ 				translater);
+@@ -235,44 +248,60 @@ public class ExampleCrossProxy2 {
+ 
+ 	public static void main(String args[]) throws IOException {
+ 		Configuration proxyConfig = Configuration.createWithFile(CONFIG_FILE, CONFIG_HEADER, DEFAULTS);
+-		ExampleCrossProxy2 proxy = new ExampleCrossProxy2(proxyConfig, false, true);
+ 		ExampleHttpServer httpServer = null;
+ 		Configuration config = ExampleCoapServer.init();
+-		for (int index = 0; index < args.length; ++index) {
+-			Integer port = parse(args[index], "coap", ExampleCoapServer.DEFAULT_COAP_PORT, config,
+-					CoapConfig.COAP_PORT);
+-			if (port != null) {
+-				new ExampleCoapServer(config, port);
+ 
++		// TODO: put into config?
++		boolean secure = false;
++
++		// TODO: default value for CoapConfig.COAP_PORT is 5683 but ExampleCoapServer.DEFAULT_COAP_PORT is 5685 ?
++		Integer coapPort = null;
++		Integer httpPort = null;
++
++		for (String arg : args) {
++			if ("secure".equals(args[0])) {
++				secure = true;
++			} else if (arg.startsWith("coap")) {
++				coapPort = parse(arg, "coap",
++						ExampleCoapServer.DEFAULT_COAP_PORT, config, CoapConfig.COAP_PORT);
++			} else if (arg.startsWith("http")) {
++				httpPort = parse(arg, "http", ExampleHttpServer.DEFAULT_PORT, null, null);
++			}
++		}
++
++		ExampleCrossProxy2 proxy = new ExampleCrossProxy2(proxyConfig, false, true, secure);
++
++		if (coapPort != null) {
++			new ExampleCoapServer(config, coapPort);
++
++			// reverse proxy: add a proxy resource with a translator
++			// returning a fixed destination URI
++			// don't add this to the ProxyMessageDeliverer
++			URI destination = URI.create("coap://localhost:" + coapPort + "/coap-target");
++			ProxyCoapResource reverseProxy = ProxyCoapResource.createReverseProxy("destination1", true, true, true,
++					destination, proxy.endpoints);
++			reverseProxy.setCache(proxy.cache);
++			proxy.coapProxyServer.getRoot().getChild("targets").add(reverseProxy);
++			System.out.println("CoAP Proxy at: coap://localhost:" + proxy.coapPort
++					+ "/coap2coap and demo-server at coap://localhost:" + coapPort + ExampleCoapServer.RESOURCE);
++			System.out.println("HTTP Proxy at: http://localhost:" + proxy.httpPort + "/proxy/coap://localhost:"
++					+ coapPort + ExampleCoapServer.RESOURCE);
++		} else {
++			if (httpPort != null) {
++				httpServer = new ExampleHttpServer(config, httpPort);
+ 				// reverse proxy: add a proxy resource with a translator
+ 				// returning a fixed destination URI
+ 				// don't add this to the ProxyMessageDeliverer
+-				URI destination = URI.create("coap://localhost:" + port + "/coap-target");
+-				ProxyCoapResource reverseProxy = ProxyCoapResource.createReverseProxy("destination1", true, true, true,
+-						destination, proxy.endpoints);
++				URI destination = URI.create("http://localhost:" + httpPort + "/http-target");
++				ProxyCoapResource reverseProxy = ProxyCoapResource.createReverseProxy("destination2", true, true,
++						true, destination, proxy.endpoints);
+ 				reverseProxy.setCache(proxy.cache);
+ 				proxy.coapProxyServer.getRoot().getChild("targets").add(reverseProxy);
+ 				System.out.println("CoAP Proxy at: coap://localhost:" + proxy.coapPort
+-						+ "/coap2coap and demo-server at coap://localhost:" + port + ExampleCoapServer.RESOURCE);
+-				System.out.println("HTTP Proxy at: http://localhost:" + proxy.httpPort + "/proxy/coap://localhost:"
+-						+ port + ExampleCoapServer.RESOURCE);
+-			} else {
+-				port = parse(args[index], "http", ExampleHttpServer.DEFAULT_PORT, null, null);
+-				if (port != null) {
+-					httpServer = new ExampleHttpServer(config, port);
+-					// reverse proxy: add a proxy resource with a translator
+-					// returning a fixed destination URI
+-					// don't add this to the ProxyMessageDeliverer
+-					URI destination = URI.create("http://localhost:" + port + "/http-target");
+-					ProxyCoapResource reverseProxy = ProxyCoapResource.createReverseProxy("destination2", true, true,
+-							true, destination, proxy.endpoints);
+-					reverseProxy.setCache(proxy.cache);
+-					proxy.coapProxyServer.getRoot().getChild("targets").add(reverseProxy);
+-					System.out.println("CoAP Proxy at: coap://localhost:" + proxy.coapPort
+-							+ "/coap2http and demo server at http://localhost:" + port + ExampleHttpServer.RESOURCE);
+-				}
++						+ "/coap2http and demo server at http://localhost:" + httpPort + ExampleHttpServer.RESOURCE);
+ 			}
+ 		}
++
+ 		startManagamentStatistic();
+ 		Runtime runtime = Runtime.getRuntime();
+ 		long max = runtime.maxMemory();
+diff --git a/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/Proxy2.java b/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/Proxy2.java
+index 548cd5d5e..4078501a6 100644
+--- a/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/Proxy2.java
++++ b/demo-apps/cf-proxy2/src/main/java/org/eclipse/californium/examples/Proxy2.java
+@@ -66,8 +66,8 @@ public class Proxy2 {
+ 		System.out.println("(c) 2020, Bosch.IO GmbH and others");
+ 		System.out.println();
+ 		System.out.println(
+-				"Usage: " + Proxy2.class.getSimpleName() + " (" + CROSS_PROXY + "|" + SECURE_PROXY + "|" + COAP_CLIENT
+-						+ "|" + SECURE_COAP_CLIENT + "|" + HTTP_CLIENT + "|" + COAP_SERVER + "|" + HTTP_SERVER + ")");
++				"Usage: " + Proxy2.class.getSimpleName() + " ( " + CROSS_PROXY + " <secure> | " + SECURE_PROXY + " | " + COAP_CLIENT
++						+ " | " + SECURE_COAP_CLIENT + " | " + HTTP_CLIENT + " | " + COAP_SERVER + " | " + HTTP_SERVER + " )");
+ 		if (start != null) {
+ 			System.out.println("   '" + start + "' is not supported!");
+ 		}
+-- 
+2.25.1
+

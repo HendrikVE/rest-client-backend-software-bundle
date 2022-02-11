@@ -1,0 +1,20 @@
+# base
+Django==3.1.*
+django-cors-headers==3.7.*
+djangorestframework==3.12.*
+django-sslserver
+
+# auth
+dj-rest-auth[with_social]==2.1.*
+django-allauth==0.44.*
+djangorestframework-simplejwt==4.8.*
+
+# This one is only temporary. There is an error with this lib in it's 2.2 release:
+#   TypeError: decode() got an unexpected keyword argument 'verify'
+# TODO: Can be removed entirely as soon as this is fixed with a later release.
+pyjwt==2.1.*
+
+# misc
+psycopg2-binary==2.9.*
+gunicorn==20.1.*
+kubernetes

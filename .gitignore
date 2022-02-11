@@ -1,0 +1,26 @@
+.idea/
+*.jks
+*.env
+
+built_elffiles/
+
+# Django
+*.log
+*.pot
+*.pyc
+__pycache__
+db.sqlite3
+media
+staticfiles
+
+# Pycharm
+.idea
+
+# Python
+*.py[cod]
+*$py.class
+
+# Exceptions
+!.env.californium.dev
+!.env.kafka-rest-proxy.dev
+!.env.mqtt2http.dev
