@@ -15,7 +15,12 @@ The Kubernetes Cluster is not included in the docker-compose services. To run a 
 kubernetes cluster on your machine that can be controlled by the services defined in this
 application, you can install minikube: https://kubernetes.io/de/docs/tasks/tools/install-minikube/
 
-Afterwards, start your local Kubernetes cluster with `minikube start`.
+Afterwards, start your local Kubernetes cluster with `minikube start` and start a new deployment with 
+`kubectl create deployment kubernetes-bootcamp --image=gcr.io/google-samples/kubernetes-bootcamp:v1`
+
+After the deployment was scaled, check the replica count locally with `kubectl get deployments`
+
+#### Django example
 
 The django backend `example_backend` has a request to scale kubernetes that is available
 at `http://localhost:8000/api/demo/scale-kubernetes/`. But in order to get the request working,
@@ -30,8 +35,10 @@ To install all dependencies run `pip install -r requirements.txt` from `docker/e
 You also need to set all the environment variables that would normally be included by docker from
 `.env.django.dev`. After that execute the django backend with:
 
-`python manage.py runserver [::1]:8000`
+Then start the django backend with `python manage.py runserver [::1]:8000`
 
-After the scale request was called, check the replica count locally with `kubectl get deployments`
+#### Kafka example
 
+To install all dependencies run `pip install -r requirements.txt` from `docker/kafka-consumer`
 
+Then start the kafka client with `python kafka_consumer.py`

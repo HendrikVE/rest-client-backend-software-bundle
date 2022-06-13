@@ -3,6 +3,8 @@ from rest_framework import permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+import random
+
 from kubernetes import client, config
 
 lorem_ipsum = (
@@ -35,6 +37,17 @@ def fixed_payload_length(request):
 def update_sensor_data(request):
 
     print(request.data)
+
+    replicas = random.randint(1, 42)
+
+    # Configs can be set in Configuration class directly or using helper utility
+    config.load_kube_config()
+
+    api_instance = client.AppsV1Api()
+
+    api_response = api_instance.patch_namespaced_deployment_scale(
+        'kubernetes-bootcamp', 'default', {'spec': {'replicas': replicas}})
+    print(api_response)
 
     return JsonResponse({'status': 'ok'})
 
